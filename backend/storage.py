@@ -131,16 +131,18 @@ def add_assistant_message(
     conversation_id: str,
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
-    stage3: Dict[str, Any]
+    stage3: List[Dict[str, Any]],
+    stage4: Dict[str, Any]
 ):
     """
-    Add an assistant message with all 3 stages to a conversation.
+    Add an assistant message with all 4 stages to a conversation.
 
     Args:
         conversation_id: Conversation identifier
         stage1: List of individual model responses
-        stage2: List of model rankings
-        stage3: Final synthesized response
+        stage2: List of discussion responses
+        stage3: List of model rankings
+        stage4: Final synthesized response
     """
     conversation = get_conversation(conversation_id)
     if conversation is None:
@@ -150,10 +152,28 @@ def add_assistant_message(
         "role": "assistant",
         "stage1": stage1,
         "stage2": stage2,
-        "stage3": stage3
+        "stage3": stage3,
+        "stage4": stage4
     })
 
     save_conversation(conversation)
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """
+    Delete a conversation from storage.
+
+    Args:
+        conversation_id: Conversation identifier
+
+    Returns:
+        True if deleted, False if not found
+    """
+    path = get_conversation_path(conversation_id)
+    if not os.path.exists(path):
+        return False
+    os.remove(path)
+    return True
 
 
 def update_conversation_title(conversation_id: str, title: str):

@@ -1,0 +1,17 @@
+.discussion-stage {
+  background: #fdf6ff;
+  border-color: #e0c8f0;
+}
+
+.discussion-model {
+  color: #888;
+  font-size: 12px;
+  font-family: monospace;
+  margin-bottom: 12px;
+}
+
+.discussion-content {
+  color: #333;
+  line-height: 1.6;
+  font-size: 14px;
+}

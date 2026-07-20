@@ -10,7 +10,7 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_discussion_round, stage3_collect_rankings, stage4_synthesize_final, calculate_aggregate_rankings
 
 app = FastAPI(title="LLM Council API")
 
@@ -54,6 +54,14 @@ class Conversation(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation."""
+    if not storage.delete_conversation(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"status": "deleted"}
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
@@ -101,8 +109,8 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
-    # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
+    # Run the 4-stage council process
+    stage1_results, stage2_results, stage3_results, stage4_result, metadata = await run_full_council(
         request.content
     )
 
@@ -111,14 +119,16 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         conversation_id,
         stage1_results,
         stage2_results,
-        stage3_result
+        stage3_results,
+        stage4_result
     )
 
     # Return the complete response with metadata
     return {
         "stage1": stage1_results,
         "stage2": stage2_results,
-        "stage3": stage3_result,
+        "stage3": stage3_results,
+        "stage4": stage4_result,
         "metadata": metadata
     }
 
@@ -152,16 +162,21 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             stage1_results = await stage1_collect_responses(request.content)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
-            # Stage 2: Collect rankings
+            # Stage 2: Discussion round
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            stage2_results = await stage2_discussion_round(request.content, stage1_results)
+            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results})}\n\n"
 
-            # Stage 3: Synthesize final answer
+            # Stage 3: Collect rankings
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            stage3_results, label_to_model = await stage3_collect_rankings(request.content, stage1_results)
+            aggregate_rankings = calculate_aggregate_rankings(stage3_results, label_to_model)
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+
+            # Stage 4: Synthesize final answer
+            yield f"data: {json.dumps({'type': 'stage4_start'})}\n\n"
+            stage4_result = await stage4_synthesize_final(request.content, stage1_results, stage2_results, stage3_results)
+            yield f"data: {json.dumps({'type': 'stage4_complete', 'data': stage4_result})}\n\n"
 
             # Wait for title generation if it was started
             if title_task:
@@ -174,7 +189,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 conversation_id,
                 stage1_results,
                 stage2_results,
-                stage3_result
+                stage3_results,
+                stage4_result
             )
 
             # Send completion event

@@ -32,7 +32,60 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     return stage1_results
 
 
-async def stage2_collect_rankings(
+async def stage2_discussion_round(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Stage 2: Each model sees all responses and engages in discussion -
+    critiquing, agreeing, disagreeing, and building on each other's insights.
+
+    Args:
+        user_query: The original user query
+        stage1_results: Results from Stage 1
+
+    Returns:
+        List of dicts with 'model' and 'discussion' keys
+    """
+    # Build context of all responses
+    responses_text = "\n\n".join([
+        f"### {result['model']}\n{result['response']}"
+        for result in stage1_results
+    ])
+
+    discussion_prompt = f"""You are participating in a council discussion. Several AI models have already provided their initial responses to the following question:
+
+Question: {user_query}
+
+Here are the responses from all models:
+
+{responses_text}
+
+Now it's your turn to engage in discussion. Please address the following:
+
+1. Critique: For each other model's response, point out what you agree with, what you disagree with, and why.
+2. Build: Take insights from others that you find valuable and expand on them.
+3. Gaps: Identify anything important that was missed by all or most responses.
+4. Synthesis: Offer a refined perspective that incorporates the best ideas from the discussion.
+
+Be conversational and direct in your tone - this is a live discussion, not a formal report. Name the specific models you're responding to."""
+
+    messages = [{"role": "user", "content": discussion_prompt}]
+
+    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+
+    stage2_results = []
+    for model, response in responses.items():
+        if response is not None:
+            stage2_results.append({
+                "model": model,
+                "discussion": response.get('content', '')
+            })
+
+    return stage2_results
+
+
+async def stage3_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]]
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
@@ -112,18 +165,20 @@ Now provide your evaluation and ranking:"""
     return stage2_results, label_to_model
 
 
-async def stage3_synthesize_final(
+async def stage4_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
-    stage2_results: List[Dict[str, Any]]
+    stage2_results: List[Dict[str, Any]],
+    stage3_results: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
-    Stage 3: Chairman synthesizes final response.
+    Stage 4: Chairman synthesizes final response.
 
     Args:
         user_query: The original user query
         stage1_results: Individual model responses from Stage 1
-        stage2_results: Rankings from Stage 2
+        stage2_results: Discussion responses from Stage 2
+        stage3_results: Rankings from Stage 3
 
     Returns:
         Dict with 'model' and 'response' keys
@@ -135,24 +190,32 @@ async def stage3_synthesize_final(
     ])
 
     stage2_text = "\n\n".join([
-        f"Model: {result['model']}\nRanking: {result['ranking']}"
+        f"Model: {result['model']}\nDiscussion: {result['discussion']}"
         for result in stage2_results
     ])
 
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+    stage3_text = "\n\n".join([
+        f"Model: {result['model']}\nRanking: {result['ranking']}"
+        for result in stage3_results
+    ])
+
+    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, discussed each other's responses, and then ranked each other's work.
 
 Original Question: {user_query}
 
 STAGE 1 - Individual Responses:
 {stage1_text}
 
-STAGE 2 - Peer Rankings:
+STAGE 2 - Council Discussion:
 {stage2_text}
+
+STAGE 3 - Peer Rankings:
+{stage3_text}
 
 Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
 - The individual responses and their insights
+- The discussion between models and what they agreed/disagreed on
 - The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
 
 Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
 
@@ -293,37 +356,41 @@ Title:"""
     return title
 
 
-async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+async def run_full_council(user_query: str) -> Tuple[List, List, List, Dict, Dict]:
     """
-    Run the complete 3-stage council process.
+    Run the complete 4-stage council process.
 
     Args:
         user_query: The user's question
 
     Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+        Tuple of (stage1_results, stage2_results, stage3_results, stage4_result, metadata)
     """
     # Stage 1: Collect individual responses
     stage1_results = await stage1_collect_responses(user_query)
 
     # If no models responded successfully, return error
     if not stage1_results:
-        return [], [], {
+        return [], [], [], {
             "model": "error",
             "response": "All models failed to respond. Please try again."
         }, {}
 
-    # Stage 2: Collect rankings
-    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    # Stage 2: Discussion round - models critique and build on each other's work
+    stage2_results = await stage2_discussion_round(user_query, stage1_results)
+
+    # Stage 3: Collect rankings
+    stage3_results, label_to_model = await stage3_collect_rankings(user_query, stage1_results)
 
     # Calculate aggregate rankings
-    aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+    aggregate_rankings = calculate_aggregate_rankings(stage3_results, label_to_model)
 
-    # Stage 3: Synthesize final answer
-    stage3_result = await stage3_synthesize_final(
+    # Stage 4: Synthesize final answer
+    stage4_result = await stage4_synthesize_final(
         user_query,
         stage1_results,
-        stage2_results
+        stage2_results,
+        stage3_results
     )
 
     # Prepare metadata
@@ -332,4 +399,4 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         "aggregate_rankings": aggregate_rankings
     }
 
-    return stage1_results, stage2_results, stage3_result, metadata
+    return stage1_results, stage2_results, stage3_results, stage4_result, metadata

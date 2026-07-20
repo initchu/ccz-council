@@ -10,14 +10,14 @@ API_KEY = os.getenv("AI_GATEWAY_API_KEY")
 
 # Council members - list of model identifiers supported by the gateway
 COUNCIL_MODELS = [
-    "gpt-4o",
-    "deepseek-chat",
-    "qwen-plus",
-    "glm-4-plus",
+    "deepseek-v4-pro",
+    "gpt-5.6-sol",
+    "glm-5.2",
+    "kimi-k2.6",
 ]
 
 # Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "gpt-4o"
+CHAIRMAN_MODEL = "gpt-5.6-luna"
 
 # AI Gateway API endpoint (OpenAI-compatible)
 API_BASE_URL = os.getenv("AI_GATEWAY_BASE_URL", "https://aigw.nis.netease.com/v1")

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import Stage1 from './Stage1';
+import Discussion from './Discussion';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import './ChatInterface.css';
@@ -81,29 +82,38 @@ export default function ChatInterface({
                   )}
                   {msg.stage1 && <Stage1 responses={msg.stage1} />}
 
-                  {/* Stage 2 */}
+                  {/* Stage 2: Discussion */}
                   {msg.loading?.stage2 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 2: Peer rankings...</span>
+                      <span>Running Stage 2: Council discussion...</span>
                     </div>
                   )}
-                  {msg.stage2 && (
+                  {msg.stage2 && <Discussion discussions={msg.stage2} />}
+
+                  {/* Stage 3: Rankings */}
+                  {msg.loading?.stage3 && (
+                    <div className="stage-loading">
+                      <div className="spinner"></div>
+                      <span>Running Stage 3: Peer rankings...</span>
+                    </div>
+                  )}
+                  {msg.stage3 && (
                     <Stage2
-                      rankings={msg.stage2}
+                      rankings={msg.stage3}
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
                     />
                   )}
 
-                  {/* Stage 3 */}
-                  {msg.loading?.stage3 && (
+                  {/* Stage 4: Final */}
+                  {msg.loading?.stage4 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 3: Final synthesis...</span>
+                      <span>Running Stage 4: Final synthesis...</span>
                     </div>
                   )}
-                  {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+                  {msg.stage4 && <Stage3 finalResponse={msg.stage4} />}
                 </div>
               )}
             </div>
@@ -120,8 +130,7 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      {conversation.messages.length === 0 && (
-        <form className="input-form" onSubmit={handleSubmit}>
+      <form className="input-form" onSubmit={handleSubmit}>
           <textarea
             className="message-input"
             placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
@@ -139,7 +148,6 @@ export default function ChatInterface({
             Send
           </button>
         </form>
-      )}
     </div>
   );
 }
